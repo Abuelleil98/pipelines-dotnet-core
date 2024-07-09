@@ -12,12 +12,49 @@ pool:
 variables:
   buildConfiguration: 'Release'
 
+# stages:
+#   - stage: A
+#     jobs: 
+#     - job:
+#       strategy:
+#         parallel: 1
+#       steps:
+#       - script: dotnet build --configuration $(buildConfiguration)
+#       displayName: 'dotnet build $(buildConfiguration)'
 stages:
-  - stage: A
-    jobs: 
-    - job:
-      strategy:
-        parallel: 1
-      steps:
-      - script: dotnet build --configuration $(buildConfiguration)
-      displayName: 'dotnet build $(buildConfiguration)'
+  - stage: BuildAndDeploy
+    jobs:
+      - job: Build
+        displayName: 'Build Job'
+        steps:
+          - task: UseDotNet@2
+            inputs:
+              packageType: 'sdk'
+              version: '6.x'
+              installationPath: $(Agent.ToolsDirectory)/dotnet
+
+          - script: dotnet restore
+            displayName: 'Restore Packages'
+
+          - script: dotnet build --configuration $(buildConfiguration)
+            displayName: 'Build Solution'
+
+          - script: dotnet publish --configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)
+            displayName: 'Publish Artifacts'
+
+          - task: ArchiveFiles@2
+            inputs:
+              rootFolderOrFile: $(Build.ArtifactStagingDirectory)
+              includeRootFolder: false
+              archiveType: 'zip'
+              archiveFile: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+              replaceExistingArchive: true
+
+      - job: Deploy
+        displayName: 'Deploy Job'
+        dependsOn: Build
+        steps:
+          - task: DownloadPipelineArtifact@2
+            inputs:
+              artifactName: 'drop'
+              path: '$(Build.ArtifactStagingDirectory)'
